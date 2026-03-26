@@ -49,6 +49,12 @@ docker compose up -d --build
 - `temp_mail_admin_password`
 - `temp_mail_domain`
 
+其中 DuckMail 的推荐填法是：
+
+- `temp_mail_api_base`: `https://api.duckmail.sbs`
+- `temp_mail_admin_password`: 可留空；如果你要用 DuckMail 私有域名，再填 API Key
+- `temp_mail_domain`: 可留空；留空时执行器会自动挑一个 DuckMail 公开可用域名
+
 默认情况下：
 
 - `browser_proxy` 和 `proxy` 已经预设为容器内的 `warp`
@@ -122,7 +128,7 @@ python DrissionPage_example.py --count 1
 
 - 仓库里提供的是可公开分享的示例配置，不包含任何真实邮箱接口、真实域名、密码或 token
 - 实际运行时，请把你自己的参数写进本机 `config.json` 或控制台系统配置里，不要把生产凭据提交回仓库
-- 代码兼容旧版 `duckmail_*` 字段，只是为了照顾历史配置；第一次部署的新用户，直接使用 `temp_mail_*` 这一套字段即可
+- 代码兼容旧版 `duckmail_*` 字段；现在也原生支持把 DuckMail 直接接到 `temp_mail_*` 这一套字段上
 
 ## 文档入口
 

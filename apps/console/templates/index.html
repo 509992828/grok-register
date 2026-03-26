@@ -50,18 +50,18 @@
           </label>
           <label>
             <span>邮箱 API Base</span>
-            <small>临时邮箱服务接口地址，例如你自己的邮箱 API。</small>
-            <input name="temp_mail_api_base" placeholder="https://api.example.com">
+            <small>临时邮箱服务接口地址，既支持自定义 Temp Mail，也支持 DuckMail。</small>
+            <input name="temp_mail_api_base" placeholder="https://api.duckmail.sbs">
           </label>
           <label>
             <span>邮箱域名</span>
-            <small>注册时实际使用的邮箱后缀。</small>
+            <small>注册时实际使用的邮箱后缀。DuckMail 留空时会自动选公开域名。</small>
             <input name="temp_mail_domain" placeholder="example.com">
           </label>
           <label>
-            <span>邮箱管理密码</span>
-            <small>创建临时邮箱地址用的管理口令。</small>
-            <input name="temp_mail_admin_password" placeholder="admin password">
+            <span>邮箱管理口令 / DuckMail API Key</span>
+            <small>自定义 Temp Mail 填管理口令；DuckMail 可留空或填 API Key 以使用私有域名。</small>
+            <input name="temp_mail_admin_password" placeholder="admin password / dk_xxx">
           </label>
           <label>
             <span>站点密码</span>
@@ -139,17 +139,17 @@
             </label>
             <label>
               <span>邮箱 API Base 覆盖</span>
-              <small>当前任务临时改用别的邮箱接口时再填。</small>
+              <small>当前任务临时改用别的邮箱接口时再填，也支持 DuckMail。</small>
               <input name="temp_mail_api_base" placeholder="留空则用系统默认">
             </label>
             <label>
               <span>邮箱域名覆盖</span>
-              <small>当前任务临时改邮箱后缀时再填。</small>
+              <small>当前任务临时改邮箱后缀时再填；DuckMail 留空会自动选域名。</small>
               <input name="temp_mail_domain" placeholder="留空则用系统默认">
             </label>
             <label>
-              <span>邮箱管理密码覆盖</span>
-              <small>当前任务临时改邮箱创建口令时再填。</small>
+              <span>邮箱管理口令 / DuckMail API Key 覆盖</span>
+              <small>当前任务临时改 Temp Mail 口令或 DuckMail API Key 时再填。</small>
               <input name="temp_mail_admin_password" placeholder="留空则用系统默认">
             </label>
             <label>

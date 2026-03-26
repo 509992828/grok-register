@@ -84,6 +84,12 @@ cp config.example.json config.json
 - `temp_mail_admin_password`
 - `temp_mail_domain`
 
+如果你准备用 DuckMail，推荐直接填：
+
+- `temp_mail_api_base`: `https://api.duckmail.sbs`
+- `temp_mail_admin_password`: 公共域名场景可留空；只有要访问私有域名时才需要填 DuckMail API Key
+- `temp_mail_domain`: 可留空；留空时执行器会自动从 DuckMail 域名列表里选择一个公开、已验证域名
+
 如果你不是用现成邮箱服务，而是准备自己实现接口：
 
 - 先看 [temp-mail-api.md](temp-mail-api.md)

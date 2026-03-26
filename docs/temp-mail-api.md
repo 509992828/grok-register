@@ -4,6 +4,12 @@
 
 如果你想把自己的邮箱系统接进 `grok-register`，只要实现这里约定的接口，控制台和注册执行器就能直接工作。
 
+如果你用的是 DuckMail：
+
+- 不需要自己再实现这里这套 `/admin/new_address` / `/api/mails` / `/api/mail/<id>` 契约
+- 当前仓库已经原生支持 DuckMail 官方接口，直接把 `temp_mail_api_base` 配成 `https://api.duckmail.sbs` 即可
+- `temp_mail_domain` 可留空自动选公开域名；`temp_mail_admin_password` 只有在私有域名场景下才需要填 DuckMail API Key
+
 ## 一句话说明
 
 当前执行器实际依赖 3 个接口：
@@ -24,7 +30,7 @@
 
 执行器实现见 [email_register.py](/home/codex/grok-register/email_register.py)。
 
-当前默认约定如下：
+自定义 Temp Mail 默认约定如下：
 
 ### 1. 创建邮箱
 

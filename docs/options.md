@@ -44,6 +44,7 @@
 示例：
 
 - `https://mail-api.example.com`
+- `https://api.duckmail.sbs`
 
 执行器会调用它创建邮箱地址、列出邮件、读取邮件正文。
 
@@ -53,7 +54,12 @@
 
 临时邮箱后台管理口令，用于创建新邮箱地址。
 
-如果没填，执行器会在创建邮箱阶段直接报错，不会继续往下跑。
+如果你用的是自定义 Temp Mail，这个字段必填。
+
+如果你用的是 DuckMail：
+
+- 公共域名场景下可以留空
+- 需要访问私有域名时再填 DuckMail API Key
 
 ## temp_mail_domain
 
@@ -64,6 +70,11 @@
 - `mail.example.com`
 
 这个字段很关键。就算邮箱 API 可用，如果这个域名本身被 `x.ai` 拒绝，流程也会卡在注册页。
+
+如果你用的是 DuckMail：
+
+- 可以显式填写你想用的域名
+- 也可以留空，执行器会自动从 DuckMail 域名列表里挑一个公开、已验证域名
 
 ## temp_mail_site_password
 
