@@ -9,6 +9,13 @@ services:
     ports:
       - "127.0.0.1:1080:1080"
 
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    restart: unless-stopped
+    shm_size: 1gb
+    depends_on:
+      - warp
+
   grok2api:
     image: ghcr.io/chenyme/grok2api:latest
     working_dir: /app
@@ -23,6 +30,9 @@ services:
       GROK2API_API_KEY: ${GROK2API_API_KEY:-}
       GROK2API_BASE_PROXY_URL: ${GROK2API_BASE_PROXY_URL:-socks5://warp:1080}
       GROK2API_ASSET_PROXY_URL: ${GROK2API_ASSET_PROXY_URL:-socks5://warp:1080}
+      FLARESOLVERR_URL: ${FLARESOLVERR_URL:-http://flaresolverr:8191}
+      CF_REFRESH_INTERVAL: ${CF_REFRESH_INTERVAL:-600}
+      CF_TIMEOUT: ${CF_TIMEOUT:-60}
     ports:
       - "${GROK2API_HOST_PORT:-8000}:8000"
     volumes:
@@ -32,6 +42,7 @@ services:
     restart: unless-stopped
     depends_on:
       - warp
+      - flaresolverr
 
   console:
     build:
