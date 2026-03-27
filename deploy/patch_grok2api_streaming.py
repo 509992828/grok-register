@@ -100,8 +100,8 @@ PATCHES = [
     ),
     PatchSpec(
         path=IMAGE_PATH,
-        marker="Patched by grok-register: prefer ws image stream for imagine waterfall",
-        label="prefer ws image stream for imagine waterfall",
+        marker="Patched by grok-register: align app-chat image stream with modeId auto",
+        label="align app-chat image stream with modeId auto",
         old="""                    try:
                         try:
                             result = await self._stream_app_chat(
@@ -138,18 +138,15 @@ PATCHES = [
                             yield chunk
                         return""",
         new="""                    try:
-                        # Patched by grok-register: imagine waterfall needs
-                        # ws_imagine to preserve aspect ratio and reduce the
-                        # latency caused by app-chat image streaming.
-                        result = await self._stream_ws(
+                        # Patched by grok-register: align app-chat image stream
+                        # with Grok's current modeId=auto routing.
+                        result = await self._stream_app_chat(
                             token_mgr=token_mgr,
                             token=current_token,
                             model_info=model_info,
                             prompt=prompt,
                             n=n,
                             response_format=response_format,
-                            size=size,
-                            aspect_ratio=aspect_ratio,
                             enable_nsfw=enable_nsfw,
                             chat_format=chat_format,
                         )
