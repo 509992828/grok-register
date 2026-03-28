@@ -5,6 +5,12 @@ services:
       service: warp
     restart: unless-stopped
 
+  flaresolverr:
+    extends:
+      file: ../docker-compose.yml
+      service: flaresolverr
+    restart: unless-stopped
+
   grok2api:
     extends:
       file: ../docker-compose.yml

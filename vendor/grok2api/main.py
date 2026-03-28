@@ -39,6 +39,9 @@ from app.api.v1.files import router as files_router  # noqa: E402
 from app.api.v1.models import router as models_router  # noqa: E402
 from app.api.v1.response import router as responses_router  # noqa: E402
 from app.services.token import get_scheduler  # noqa: E402
+from app.services.pool_maintenance import (  # noqa: E402
+    get_scheduler as get_pool_maintenance_scheduler,
+)
 from app.api.v1.admin import router as admin_router  # noqa: E402
 from app.api.v1.function import router as function_router  # noqa: E402
 from app.api.pages import router as pages_router  # noqa: E402
@@ -81,6 +84,9 @@ async def lifespan(app: FastAPI):
         scheduler = get_scheduler(interval)
         scheduler.start()
 
+    pool_maintenance_scheduler = get_pool_maintenance_scheduler()
+    pool_maintenance_scheduler.start()
+
     # 5. 启动 cf_clearance 自动刷新
     #    环境变量 FLARESOLVERR_URL 会作为初始值写入配置（兼容旧部署方式）
     _flaresolverr_env = os.getenv("FLARESOLVERR_URL", "")
@@ -114,6 +120,7 @@ async def lifespan(app: FastAPI):
     if refresh_enabled:
         scheduler = get_scheduler()
         scheduler.stop()
+    pool_maintenance_scheduler.stop()
 
 
 def create_app() -> FastAPI:

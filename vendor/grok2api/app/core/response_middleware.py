@@ -55,6 +55,7 @@ class ResponseLoggerMiddleware(BaseHTTPMiddleware):
             "/admin/config",
             "/admin/cache",
             "/admin/token",
+            "/admin/pool-maintenance",
         ):
             return await call_next(request)
 

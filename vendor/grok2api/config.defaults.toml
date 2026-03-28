@@ -221,3 +221,52 @@ concurrent = 100
 batch_size = 50
 # Usage 请求超时时间（秒）
 timeout = 60
+
+# ==================== 号池维护 ====================
+[pool_maintenance]
+# 是否启用自动补号/删号
+# Enable automatic token replenishment and pruning
+enabled = false
+# register console API 地址
+# Register console API base URL
+console_url = "http://console:18600"
+# 轮询间隔（秒）
+# Scheduler polling interval in seconds
+interval_sec = 60
+# 受管号池列表
+# Managed token pools
+managed_pools = ["ssoBasic"]
+# 最低活跃号阈值
+# Minimum active-token threshold before auto replenishment
+min_active_tokens = 30
+# 单个补号任务的注册数量
+# Registration count for each auto-created task
+register_count_per_task = 20
+# 最多同时运行的自动补号任务数
+# Maximum number of concurrent auto-created register tasks
+max_running_tasks = 1
+# 自动创建任务名前缀
+# Prefix for auto-created register task names
+task_name_prefix = "pool-maintenance"
+# 是否删除 cooling 号
+# Remove tokens in cooling state
+delete_cooling_tokens = true
+# 是否删除 expired 号
+# Remove tokens in expired state
+delete_expired_tokens = true
+# 以下字段为空时，沿用 console 默认配置
+# When these override fields are empty, the register console defaults are used
+proxy = ""
+browser_proxy = ""
+temp_mail_api_base = ""
+temp_mail_admin_password = ""
+temp_mail_domain = ""
+temp_mail_site_password = ""
+# 注册任务回推当前 grok2api 的 sink 配置
+# Token pushback sink overrides for auto-created register tasks
+api_endpoint = "http://grok2api:8000/v1/admin/tokens"
+api_token = ""
+api_append = true
+# 注册成功并回推 token 后，是否自动触发 NSFW 开启
+# Automatically enable NSFW after freshly registered tokens are pushed back
+api_auto_enable_nsfw = false

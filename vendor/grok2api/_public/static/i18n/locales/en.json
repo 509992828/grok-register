@@ -71,6 +71,7 @@
   },
   "nav": {
     "tokenManage": "Token Mgmt",
+    "poolMaintenance": "Pool Maintenance",
     "configManage": "Config Mgmt",
     "cacheManage": "Cache Mgmt",
     "chat": "Chat",
@@ -120,12 +121,14 @@
       "asset": "Asset Config",
       "voice": "Voice Config",
       "token": "Token Pool Mgmt",
+      "pool_maintenance": "Pool Maintenance",
       "cache": "Cache Mgmt",
       "nsfw": "NSFW Config",
       "usage": "Usage Config"
     },
     "sectionDescs": {
-      "proxy": "Incorrect configuration will cause 403 errors. The IP of the first request to Grok must match the IP used to obtain the CF Clearance. Subsequent IP changes will not cause 403."
+      "proxy": "Incorrect configuration will cause 403 errors. The IP of the first request to Grok must match the IP used to obtain the CF Clearance. Subsequent IP changes will not cause 403.",
+      "pool_maintenance": "This section lets Grok2API maintain the token pool directly from the admin backend. When string override fields are left blank, the current defaults are read automatically from the register console."
     },
     "fields": {
       "app": {
@@ -216,6 +219,28 @@
         "save_delay_ms": {"title": "Save Delay", "desc": "Delay (ms) for batching Token change writes."},
         "usage_flush_interval_sec": {"title": "Usage Flush Interval", "desc": "Minimum interval (seconds) for writing usage data to database."},
         "reload_interval_sec": {"title": "Sync Interval", "desc": "Token state refresh interval (seconds) in multi-worker scenarios."}
+      },
+      "pool_maintenance": {
+        "enabled": {"title": "Enable Auto Maintenance", "desc": "Whether to enable scheduled pool maintenance. When enabled, the backend periodically cleans bad tokens and creates register tasks when active tokens fall below the threshold."},
+        "console_url": {"title": "Console URL", "desc": "HTTP address of the register console. Pool maintenance reads console defaults from this service and creates replenishment tasks through it."},
+        "interval_sec": {"title": "Check Interval (sec)", "desc": "Polling interval of the background scheduler. When enabled, the backend checks active token counts and removable tokens at this frequency."},
+        "managed_pools": {"title": "Managed Pools", "desc": "List of token pools that should be maintained. Active-token counting, cooling/expired cleanup, and auto replenishment only apply to these pools."},
+        "min_active_tokens": {"title": "Minimum Active Tokens", "desc": "If the total number of active tokens in managed pools drops below this value, the system will try to create register tasks automatically."},
+        "register_count_per_task": {"title": "Register Count Per Task", "desc": "Target registration count for each automatically created register task. The backend decides how many tasks to create based on the gap and running-task limit."},
+        "max_running_tasks": {"title": "Max Running Auto Tasks", "desc": "Maximum number of automatic replenishment tasks allowed to run at the same time. If the limit is reached, new tasks wait even when the pool is below target."},
+        "task_name_prefix": {"title": "Task Name Prefix", "desc": "Prefix used for automatically created register-task names. It is also used to recognize tasks created by this maintenance worker."},
+        "delete_cooling_tokens": {"title": "Delete Cooling Tokens", "desc": "Whether tokens in cooling state should be removed automatically. When enabled, those tokens are treated as removable."},
+        "delete_expired_tokens": {"title": "Delete Expired Tokens", "desc": "Whether tokens in expired state should be removed automatically. When enabled, those tokens are treated as removable."},
+        "proxy": {"title": "Request Proxy Override", "desc": "Override the request proxy used by automatically created register tasks. Leave blank to follow the current register-console default."},
+        "browser_proxy": {"title": "Browser Proxy Override", "desc": "Override the browser proxy used by automatically created register tasks. Leave blank to follow the current register-console default."},
+        "temp_mail_api_base": {"title": "Temp Mail API Override", "desc": "Override the temp-mail API base URL used by automatically created register tasks. Leave blank to follow the current register-console default."},
+        "temp_mail_admin_password": {"title": "Temp Mail Admin Password Override", "desc": "Override the temp-mail admin password used by automatically created register tasks. Leave blank to follow the current register-console default."},
+        "temp_mail_domain": {"title": "Temp Mail Domain Override", "desc": "Override the temp-mail domain used by automatically created register tasks. Leave blank to follow the current register-console default."},
+        "temp_mail_site_password": {"title": "Temp Mail Site Password Override", "desc": "Override the temp-mail site password used by automatically created register tasks. Leave blank to follow the current register-console default."},
+        "api_endpoint": {"title": "Pushback API Endpoint Override", "desc": "Override the token pushback endpoint used after successful registration. Leave blank to follow the current register-console default."},
+        "api_token": {"title": "Pushback API Token Override", "desc": "Override the authentication token used for token pushback after successful registration. Leave blank to follow the current register-console default."},
+        "api_append": {"title": "Append On Pushback", "desc": "Whether automatically created register tasks should append to the existing pool when pushing tokens back. This field is currently stored as a fixed boolean in pool maintenance."},
+        "api_auto_enable_nsfw": {"title": "Auto Enable NSFW", "desc": "Whether to trigger the NSFW enable endpoint automatically after freshly registered tokens are pushed back. When enabled, only the newly registered tokens from this run are sent to the async NSFW task."}
       },
       "cache": {
         "enable_auto_clean": {"title": "Auto Clean", "desc": "Whether to enable automatic cache cleanup based on size limit."},

@@ -43,7 +43,9 @@
     settingsFormEl.elements.api_endpoint.value = defaults.api?.endpoint || "";
     settingsFormEl.elements.api_token.value = defaults.api?.token || "";
     settingsFormEl.elements.api_append.checked = defaults.api?.append !== false;
+    settingsFormEl.elements.api_auto_enable_nsfw.checked = defaults.api?.auto_enable_nsfw === true;
     formEl.elements.api_append.checked = false;
+    formEl.elements.api_auto_enable_nsfw.checked = false;
   }
 
   function statusClass(status) {
@@ -152,6 +154,7 @@
       ["站点密码", cfg.temp_mail_site_password || "-"],
       ["请求代理", cfg.proxy || "-"],
       ["浏览器代理", cfg.browser_proxy || "-"],
+      ["自动开启 NSFW", cfg.api?.auto_enable_nsfw ? "开启" : "关闭"],
       ["最近邮箱", task.last_email || "-"],
       ["最近错误", task.last_error || "-"],
       ["创建时间", task.created_at || "-"],
@@ -230,6 +233,7 @@
       api_endpoint: formEl.elements.api_endpoint.value.trim() || null,
       api_token: formEl.elements.api_token.value.trim() || null,
       api_append: formEl.elements.api_append.checked ? true : null,
+      api_auto_enable_nsfw: formEl.elements.api_auto_enable_nsfw.checked ? true : null,
     };
     try {
       const data = await fetchJson("/api/tasks", {
@@ -275,6 +279,7 @@
       api_endpoint: settingsFormEl.elements.api_endpoint.value.trim(),
       api_token: settingsFormEl.elements.api_token.value.trim(),
       api_append: settingsFormEl.elements.api_append.checked,
+      api_auto_enable_nsfw: settingsFormEl.elements.api_auto_enable_nsfw.checked,
     };
     try {
       const data = await fetchJson("/api/settings", {

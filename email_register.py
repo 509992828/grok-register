@@ -13,11 +13,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-try:
-    from curl_cffi import requests as curl_requests
-except ImportError:
-    curl_requests = None
-
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -46,6 +41,7 @@ TEMP_MAIL_ADMIN_PASSWORD = str(
 TEMP_MAIL_DOMAIN = str(_conf.get("temp_mail_domain") or _conf.get("duckmail_domain") or "")
 TEMP_MAIL_SITE_PASSWORD = str(_conf.get("temp_mail_site_password", ""))
 PROXY = str(_conf.get("proxy", ""))
+BROWSER_PROXY = str(_conf.get("browser_proxy", ""))
 TEMP_MAIL_PROVIDER = str(_conf.get("temp_mail_provider") or "").strip().lower()
 
 # ============================================================
@@ -98,19 +94,40 @@ def _detect_mail_provider(api_base: str) -> str:
 def _provider_label() -> str:
     return "DuckMail" if _detect_mail_provider(TEMP_MAIL_API_BASE) == "duckmail" else "Temp Mail"
 
-def _create_session():
-    """创建请求会话（优先 curl_cffi）。"""
-    if curl_requests:
-        session = curl_requests.Session()
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        })
-        if PROXY:
-            session.proxies = {"http": PROXY, "https": PROXY}
-        return session, True
 
+def _normalize_proxy(proxy_url: str) -> str:
+    return str(proxy_url or "").strip()
+
+
+def _proxy_label(proxy_url: str) -> str:
+    normalized = _normalize_proxy(proxy_url)
+    return "direct" if not normalized else normalized
+
+
+def _ordered_proxy_candidates(*proxy_urls: str) -> List[str]:
+    ordered: List[str] = []
+    seen = set()
+    for proxy_url in proxy_urls:
+        normalized = _normalize_proxy(proxy_url)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(normalized)
+    if "" not in seen:
+        ordered.append("")
+    return ordered
+
+
+def _duckmail_proxy_candidates() -> List[str]:
+    api_proxy = _normalize_proxy(PROXY)
+    browser_proxy = _normalize_proxy(BROWSER_PROXY)
+    if api_proxy:
+        return _ordered_proxy_candidates(api_proxy, browser_proxy, "")
+    return _ordered_proxy_candidates("", browser_proxy)
+
+
+def _create_session(proxy_override: Optional[str] = None):
+    """创建请求会话。DuckMail 在当前运行环境里走 requests 比 curl_cffi 更稳定。"""
     s = requests.Session()
     retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
     adapter = HTTPAdapter(max_retries=retry)
@@ -121,15 +138,14 @@ def _create_session():
         "Accept": "application/json",
         "Content-Type": "application/json",
     })
-    if PROXY:
-        s.proxies = {"http": PROXY, "https": PROXY}
+    effective_proxy = _normalize_proxy(PROXY) if proxy_override is None else _normalize_proxy(proxy_override)
+    if effective_proxy:
+        s.proxies = {"http": effective_proxy, "https": effective_proxy}
     return s, False
 
 
 def _do_request(session, use_cffi, method, url, **kwargs):
-    """统一请求，curl_cffi 自动附带 impersonate。"""
-    if use_cffi:
-        kwargs.setdefault("impersonate", "chrome131")
+    """统一请求。"""
     return getattr(session, method)(url, **kwargs)
 
 
@@ -175,78 +191,77 @@ def _extract_duckmail_domain_name(item: Dict[str, Any]) -> str:
     return ""
 
 
-def _resolve_duckmail_domain(session, use_cffi, api_base: str) -> str:
+def _resolve_duckmail_domain(api_base: str, proxy_candidates: Optional[List[str]] = None) -> str:
     if TEMP_MAIL_DOMAIN:
         return TEMP_MAIL_DOMAIN
 
     headers = _build_duckmail_headers(TEMP_MAIL_ADMIN_PASSWORD)
-    res = _do_request(
-        session,
-        use_cffi,
-        "get",
-        f"{api_base}/domains",
-        params={"page": 1},
-        headers=headers,
-        timeout=20,
-    )
-    if res.status_code != 200:
-        raise Exception(f"获取 DuckMail 域名失败: {res.status_code} - {res.text[:200]}")
+    last_errors: List[str] = []
+    for proxy_url in proxy_candidates or _duckmail_proxy_candidates():
+        session, use_cffi = _create_session(proxy_url)
+        try:
+            res = _do_request(
+                session,
+                use_cffi,
+                "get",
+                f"{api_base}/domains",
+                params={"page": 1},
+                headers=headers,
+                timeout=20,
+            )
+            if res.status_code != 200:
+                last_errors.append(f"{_proxy_label(proxy_url)}: {res.status_code} - {res.text[:120]}")
+                continue
 
-    data = res.json()
-    if not isinstance(data, dict):
-        raise Exception("DuckMail 域名接口返回格式异常")
+            data = res.json()
+            if not isinstance(data, dict):
+                last_errors.append(f"{_proxy_label(proxy_url)}: DuckMail 域名接口返回格式异常")
+                continue
 
-    domains = data.get("hydra:member") or data.get("data") or data.get("results") or []
-    if not isinstance(domains, list) or not domains:
-        raise Exception("DuckMail 域名列表为空，请在配置里显式填写 temp_mail_domain")
+            domains = data.get("hydra:member") or data.get("data") or data.get("results") or []
+            if not isinstance(domains, list) or not domains:
+                last_errors.append(f"{_proxy_label(proxy_url)}: DuckMail 域名列表为空")
+                continue
 
-    public_verified: List[str] = []
-    verified: List[str] = []
-    fallback: List[str] = []
-    for item in domains:
-        if not isinstance(item, dict):
-            continue
-        domain = _extract_duckmail_domain_name(item)
-        if not domain:
-            continue
-        fallback.append(domain)
-        if item.get("isVerified") is True:
-            verified.append(domain)
-            if item.get("isPublic") is True or item.get("ownerId") in (None, "", 0):
-                public_verified.append(domain)
+            public_verified: List[str] = []
+            verified: List[str] = []
+            fallback: List[str] = []
+            for item in domains:
+                if not isinstance(item, dict):
+                    continue
+                domain = _extract_duckmail_domain_name(item)
+                if not domain:
+                    continue
+                fallback.append(domain)
+                if item.get("isVerified") is True:
+                    verified.append(domain)
+                    if item.get("isPublic") is True or item.get("ownerId") in (None, "", 0):
+                        public_verified.append(domain)
 
-    for candidates in (public_verified, verified, fallback):
-        if candidates:
-            return candidates[0]
-    raise Exception("DuckMail 域名列表里没有可用域名，请在配置里显式填写 temp_mail_domain")
+            for candidates in (public_verified, verified, fallback):
+                if candidates:
+                    return candidates[0]
+        except requests.RequestException as exc:
+            last_errors.append(f"{_proxy_label(proxy_url)}: {exc}")
+        except Exception as exc:
+            last_errors.append(f"{_proxy_label(proxy_url)}: {exc}")
+        finally:
+            session.close()
+
+    details = " | ".join(last_errors[-3:])
+    raise Exception(f"DuckMail 域名列表里没有可用域名，请在配置里显式填写 temp_mail_domain。{details}")
 
 
-def _create_duckmail_email() -> Tuple[str, str, str]:
-    api_base = TEMP_MAIL_API_BASE.rstrip("/")
-    session, use_cffi = _create_session()
-    domain = _resolve_duckmail_domain(session, use_cffi, api_base)
-    create_headers = _build_duckmail_headers(TEMP_MAIL_ADMIN_PASSWORD)
-    last_error = ""
-
-    for _ in range(5):
-        email_local = _generate_local_part(random.randint(8, 12))
-        email = f"{email_local}@{domain}"
-        password = _generate_mail_password()
-
-        res = _do_request(
-            session,
-            use_cffi,
-            "post",
-            f"{api_base}/accounts",
-            json={
-                "address": email,
-                "password": password,
-                "expiresIn": 86400,
-            },
-            headers=create_headers,
-            timeout=20,
-        )
-        if res.status_code in {200, 201}:
+def _login_duckmail_token(
+    api_base: str,
+    email: str,
+    password: str,
+    proxy_candidates: List[str],
+) -> str:
+    last_errors: List[str] = []
+    for proxy_url in proxy_candidates:
+        session, use_cffi = _create_session(proxy_url)
+        try:
             auth_res = _do_request(
                 session,
                 use_cffi,
@@ -256,26 +271,101 @@ def _create_duckmail_email() -> Tuple[str, str, str]:
                 timeout=20,
             )
             if auth_res.status_code != 200:
-                raise Exception(f"登录 DuckMail 邮箱失败: {auth_res.status_code} - {auth_res.text[:200]}")
+                last_errors.append(f"{_proxy_label(proxy_url)}: {auth_res.status_code} - {auth_res.text[:120]}")
+                continue
 
             token_data = auth_res.json()
             if not isinstance(token_data, dict):
-                raise Exception("DuckMail token 接口返回格式异常")
+                last_errors.append(f"{_proxy_label(proxy_url)}: DuckMail token 接口返回格式异常")
+                continue
 
             mail_token = _extract_duckmail_token(token_data)
-            if not mail_token:
-                raise Exception(f"DuckMail token 接口未返回 token: {token_data}")
+            if mail_token:
+                return mail_token
+            last_errors.append(f"{_proxy_label(proxy_url)}: DuckMail token 接口未返回 token")
+        except requests.RequestException as exc:
+            last_errors.append(f"{_proxy_label(proxy_url)}: {exc}")
+        except Exception as exc:
+            last_errors.append(f"{_proxy_label(proxy_url)}: {exc}")
+        finally:
+            session.close()
+    return ""
 
-            print(f"[*] DuckMail 临时邮箱创建成功: {email}")
-            return email, password, mail_token
 
-        if res.status_code in {409, 422}:
-            last_error = f"{res.status_code} - {res.text[:200]}"
-            continue
+def _create_duckmail_email() -> Tuple[str, str, str]:
+    api_base = TEMP_MAIL_API_BASE.rstrip("/")
+    proxy_candidates = _duckmail_proxy_candidates()
+    domain = _resolve_duckmail_domain(api_base, proxy_candidates)
+    create_headers = _build_duckmail_headers(TEMP_MAIL_ADMIN_PASSWORD)
+    last_error = ""
 
-        raise Exception(f"创建 DuckMail 邮箱失败: {res.status_code} - {res.text[:200]}")
+    for attempt in range(8):
+        email_local = _generate_local_part(random.randint(8, 12))
+        email = f"{email_local}@{domain}"
+        password = _generate_mail_password()
+        attempt_errors: List[str] = []
 
-    raise Exception(f"创建 DuckMail 邮箱失败，重试后仍冲突: {last_error}")
+        for proxy_url in proxy_candidates:
+            session, use_cffi = _create_session(proxy_url)
+            auth_candidates = _ordered_proxy_candidates(proxy_url, *proxy_candidates)
+            route_label = _proxy_label(proxy_url)
+            try:
+                res = _do_request(
+                    session,
+                    use_cffi,
+                    "post",
+                    f"{api_base}/accounts",
+                    json={
+                        "address": email,
+                        "password": password,
+                        "expiresIn": 86400,
+                    },
+                    headers=create_headers,
+                    timeout=20,
+                )
+            except requests.RequestException as exc:
+                mail_token = _login_duckmail_token(api_base, email, password, auth_candidates)
+                if mail_token:
+                    print(f"[*] DuckMail 建号请求异常后补救登录成功: {email} ({route_label})")
+                    return email, password, mail_token
+                attempt_errors.append(f"{route_label}: {exc}")
+                continue
+            finally:
+                session.close()
+
+            if res.status_code in {200, 201}:
+                mail_token = _login_duckmail_token(api_base, email, password, auth_candidates)
+                if mail_token:
+                    print(f"[*] DuckMail 临时邮箱创建成功: {email}")
+                    return email, password, mail_token
+                attempt_errors.append(f"{route_label}: DuckMail token 获取失败")
+                continue
+
+            if res.status_code in {409, 422}:
+                mail_token = _login_duckmail_token(api_base, email, password, auth_candidates)
+                if mail_token:
+                    print(f"[*] DuckMail 冲突后复用已创建邮箱成功: {email}")
+                    return email, password, mail_token
+                attempt_errors.append(f"{route_label}: {res.status_code} - {res.text[:160]}")
+                break
+
+            if res.status_code in {408, 425, 429, 500, 502, 503, 504}:
+                mail_token = _login_duckmail_token(api_base, email, password, auth_candidates)
+                if mail_token:
+                    print(f"[*] DuckMail 建号返回瞬时错误后补救登录成功: {email} ({route_label})")
+                    return email, password, mail_token
+                attempt_errors.append(f"{route_label}: {res.status_code} - {res.text[:160]}")
+                continue
+
+            raise Exception(f"创建 DuckMail 邮箱失败: {res.status_code} - {res.text[:200]}")
+
+        last_error = " | ".join(attempt_errors[-4:])
+        if attempt < 7:
+            wait_seconds = min(1.5 * (attempt + 1), 6)
+            print(f"[*] DuckMail 建号重试 {attempt + 1}/8，{wait_seconds:.1f}s 后换地址继续: {last_error[:220]}")
+            time.sleep(wait_seconds)
+
+    raise Exception(f"创建 DuckMail 邮箱失败，重试后仍失败: {last_error}")
 
 
 def create_temp_email() -> Tuple[str, str, str]:

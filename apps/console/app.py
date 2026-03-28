@@ -31,6 +31,7 @@ RUNTIME_DIR = APP_DIR / "runtime"
 TASKS_DIR = RUNTIME_DIR / "tasks"
 DB_PATH = RUNTIME_DIR / "console.db"
 TEMPLATES = Jinja2Templates(directory=str(APP_DIR / "templates"))
+CONSOLE_ASSET_VERSION = "20260328-1"
 
 SOURCE_PROJECT = Path(os.getenv("GROK_REGISTER_SOURCE_DIR", str(REPO_ROOT))).resolve()
 SOURCE_VENV_PYTHON = Path(
@@ -135,6 +136,34 @@ def init_db() -> None:
         )
 
 
+def recover_interrupted_tasks() -> None:
+    interrupted_statuses = (STATUS_RUNNING, STATUS_STOPPING)
+    placeholders = ",".join("?" for _ in interrupted_statuses)
+    stopped_at = now_iso()
+    message = "Console restarted before the worker exited cleanly."
+    with db_lock, get_conn() as conn:
+        conn.execute(
+            f"""
+            UPDATE tasks
+            SET status = ?,
+                finished_at = COALESCE(finished_at, ?),
+                exit_code = COALESCE(exit_code, -15),
+                pid = NULL,
+                current_phase = CASE
+                    WHEN current_phase IS NULL OR current_phase = '' THEN ?
+                    ELSE current_phase
+                END,
+                last_error = CASE
+                    WHEN last_error IS NULL OR last_error = '' THEN ?
+                    ELSE last_error
+                END
+            WHERE status IN ({placeholders})
+            """,
+            (STATUS_STOPPED, stopped_at, STATUS_STOPPED, message, *interrupted_statuses),
+        )
+        conn.commit()
+
+
 def load_source_defaults() -> dict[str, Any]:
     config_path = SOURCE_PROJECT / "config.json"
     if config_path.exists():
@@ -152,7 +181,7 @@ def load_source_defaults() -> dict[str, Any]:
                 "temp_mail_admin_password": "",
                 "temp_mail_domain": "",
                 "temp_mail_site_password": "",
-                "api": {"endpoint": "", "token": "", "append": True},
+                "api": {"endpoint": "", "token": "", "append": True, "auto_enable_nsfw": False},
             }
 
     env_count = os.getenv("GROK_REGISTER_DEFAULT_RUN_COUNT", "").strip()
@@ -176,6 +205,8 @@ def load_source_defaults() -> dict[str, Any]:
             base[key] = value
 
     api_base = dict(base.get("api") or {})
+    api_base.setdefault("append", True)
+    api_base.setdefault("auto_enable_nsfw", False)
     api_env_map = {
         "endpoint": "GROK_REGISTER_DEFAULT_API_ENDPOINT",
         "token": "GROK_REGISTER_DEFAULT_API_TOKEN",
@@ -187,6 +218,9 @@ def load_source_defaults() -> dict[str, Any]:
     append_env = os.getenv("GROK_REGISTER_DEFAULT_API_APPEND")
     if append_env is not None:
         api_base["append"] = append_env.strip().lower() in {"1", "true", "yes", "on"}
+    auto_enable_nsfw_env = os.getenv("GROK_REGISTER_DEFAULT_API_AUTO_ENABLE_NSFW")
+    if auto_enable_nsfw_env is not None:
+        api_base["auto_enable_nsfw"] = auto_enable_nsfw_env.strip().lower() in {"1", "true", "yes", "on"}
     base["api"] = api_base
     return base
 
@@ -428,6 +462,7 @@ class TaskCreate(BaseModel):
     api_endpoint: str | None = None
     api_token: str | None = None
     api_append: bool | None = None
+    api_auto_enable_nsfw: bool | None = None
     notes: str = ""
 
 
@@ -441,6 +476,7 @@ class SystemSettings(BaseModel):
     api_endpoint: str = ""
     api_token: str = ""
     api_append: bool = True
+    api_auto_enable_nsfw: bool = False
 
 
 @dataclass
@@ -491,6 +527,8 @@ def merged_defaults() -> dict[str, Any]:
         api_base["token"] = str(saved.get("api_token", ""))
     if "api_append" in saved:
         api_base["append"] = bool(saved.get("api_append", True))
+    if "api_auto_enable_nsfw" in saved:
+        api_base["auto_enable_nsfw"] = bool(saved.get("api_auto_enable_nsfw", False))
     base["api"] = api_base
     return base
 
@@ -510,6 +548,11 @@ def build_task_config(payload: TaskCreate) -> dict[str, Any]:
             "endpoint": api_defaults.get("endpoint", "") if payload.api_endpoint is None else payload.api_endpoint.strip(),
             "token": api_defaults.get("token", "") if payload.api_token is None else payload.api_token.strip(),
             "append": api_defaults.get("append", True) if payload.api_append is None else bool(payload.api_append),
+            "auto_enable_nsfw": (
+                api_defaults.get("auto_enable_nsfw", False)
+                if payload.api_auto_enable_nsfw is None
+                else bool(payload.api_auto_enable_nsfw)
+            ),
         },
     }
 
@@ -805,6 +848,7 @@ supervisor = TaskSupervisor()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    recover_interrupted_tasks()
     supervisor.start()
     try:
         yield
@@ -826,6 +870,7 @@ def index(request: Request) -> HTMLResponse:
             "defaults": json.dumps(merged_defaults(), ensure_ascii=False),
             "max_concurrent_tasks": MAX_CONCURRENT_TASKS,
             "source_project": str(SOURCE_PROJECT),
+            "asset_version": CONSOLE_ASSET_VERSION,
         },
     )
 

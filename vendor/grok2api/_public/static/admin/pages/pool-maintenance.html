@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grok2API - 号池维护</title>
+  <link rel="icon" href="/favicon.ico">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-sans/style.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/geist@1.0.0/dist/fonts/geist-mono/style.css" rel="stylesheet">
+  <link href="/static/common/css/common.css?v=1.6.2" rel="stylesheet">
+  <link href="/static/common/css/toast.css" rel="stylesheet">
+</head>
+
+<body class="min-h-screen flex flex-col" style="background-color: var(--bg);">
+  <div id="toast-container" class="toast-container"></div>
+  <div id="app-header"></div>
+
+  <main class="space-y-6 flex-1 container mx-auto max-w-6xl px-6 py-8 fade-in">
+    <div class="space-y-6">
+      <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 class="text-2xl font-semibold tracking-tight">号池维护</h2>
+          <p class="text-[var(--accents-4)] mt-1 text-sm">
+            在后台里直接维护 Grok 号池：活跃号不足时自动补号，cooling / expired 号自动删除。
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <button id="refresh-btn" type="button" class="geist-button-outline" onclick="loadStatusOnly()">刷新状态</button>
+          <button id="run-btn" type="button" class="geist-button-outline" onclick="runNow()">立即执行</button>
+          <button id="save-btn" type="button" class="geist-button" onclick="saveSettings()">保存配置</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div class="rounded-2xl border border-[var(--border)] bg-white p-5">
+          <div class="text-xs text-[var(--accents-4)]">自动维护</div>
+          <div id="stat-enabled" class="mt-2 text-2xl font-semibold">-</div>
+          <div id="stat-last-run" class="mt-2 text-xs text-[var(--accents-4)]">最近执行: -</div>
+        </div>
+        <div class="rounded-2xl border border-[var(--border)] bg-white p-5">
+          <div class="text-xs text-[var(--accents-4)]">活跃号</div>
+          <div id="stat-active" class="mt-2 text-2xl font-semibold">-</div>
+          <div id="stat-total" class="mt-2 text-xs text-[var(--accents-4)]">总号数: -</div>
+        </div>
+        <div class="rounded-2xl border border-[var(--border)] bg-white p-5">
+          <div class="text-xs text-[var(--accents-4)]">待删除号</div>
+          <div id="stat-removable" class="mt-2 text-2xl font-semibold">-</div>
+          <div id="stat-removable-detail" class="mt-2 text-xs text-[var(--accents-4)]">cooling / expired</div>
+        </div>
+        <div class="rounded-2xl border border-[var(--border)] bg-white p-5">
+          <div class="text-xs text-[var(--accents-4)]">自动任务</div>
+          <div id="stat-running-tasks" class="mt-2 text-2xl font-semibold">-</div>
+          <div id="stat-console" class="mt-2 text-xs text-[var(--accents-4)]">Console: -</div>
+        </div>
+        <div class="rounded-2xl border border-[var(--border)] bg-white p-5">
+          <div class="text-xs text-[var(--accents-4)]">上次结果</div>
+          <div id="stat-last-result" class="mt-2 text-2xl font-semibold">-</div>
+          <div id="stat-last-error" class="mt-2 text-xs text-[var(--accents-4)] break-all">-</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_1fr]">
+        <section class="rounded-2xl border border-[var(--border)] bg-white p-6 space-y-6">
+          <div>
+            <h3 class="text-lg font-semibold">维护配置</h3>
+            <p class="text-sm text-[var(--accents-4)] mt-1">空白的注册配置覆盖项会回退到 console 默认设置。</p>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <label class="space-y-2">
+              <span class="text-sm font-medium">启用自动维护</span>
+              <input id="enabled" type="checkbox" class="h-4 w-4">
+            </label>
+            <label class="space-y-2">
+              <span class="text-sm font-medium">Console URL</span>
+              <input id="console_url" class="geist-input" placeholder="加载后显示当前配置" data-default-placeholder="加载后显示当前配置">
+            </label>
+            <label class="space-y-2">
+              <span class="text-sm font-medium">检查间隔（秒）</span>
+              <input id="interval_sec" class="geist-input" type="number" min="5">
+            </label>
+            <label class="space-y-2">
+              <span class="text-sm font-medium">受管号池</span>
+              <input id="managed_pools" class="geist-input" placeholder="加载后显示当前配置" data-default-placeholder="加载后显示当前配置">
+            </label>
+            <label class="space-y-2">
+              <span class="text-sm font-medium">最低活跃号数</span>
+              <input id="min_active_tokens" class="geist-input" type="number" min="1">
+            </label>
+            <label class="space-y-2">
+              <span class="text-sm font-medium">单个补号任务注册数</span>
+              <input id="register_count_per_task" class="geist-input" type="number" min="1">
+            </label>
+            <label class="space-y-2">
+              <span class="text-sm font-medium">最大自动任务数</span>
+              <input id="max_running_tasks" class="geist-input" type="number" min="1">
+            </label>
+            <label class="space-y-2">
+              <span class="text-sm font-medium">任务名前缀</span>
+              <input id="task_name_prefix" class="geist-input" placeholder="加载后显示当前配置" data-default-placeholder="加载后显示当前配置">
+            </label>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <label class="space-y-2">
+              <span class="text-sm font-medium">删除 cooling 号</span>
+              <input id="delete_cooling_tokens" type="checkbox" class="h-4 w-4">
+            </label>
+            <label class="space-y-2">
+              <span class="text-sm font-medium">删除 expired 号</span>
+              <input id="delete_expired_tokens" type="checkbox" class="h-4 w-4">
+            </label>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <h4 class="text-sm font-semibold">注册任务覆盖</h4>
+              <p class="text-xs text-[var(--accents-4)] mt-1">只填你想覆盖 console 默认值的字段。</p>
+            </div>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label class="space-y-2">
+                <span class="text-sm font-medium">请求代理</span>
+                <input id="proxy" class="geist-input" placeholder="留空时自动跟随注册机默认值" data-default-placeholder="留空时自动跟随注册机默认值">
+              </label>
+              <label class="space-y-2">
+                <span class="text-sm font-medium">浏览器代理</span>
+                <input id="browser_proxy" class="geist-input" placeholder="留空时自动跟随注册机默认值" data-default-placeholder="留空时自动跟随注册机默认值">
+              </label>
+              <label class="space-y-2 md:col-span-2">
+                <span class="text-sm font-medium">临时邮箱 API</span>
+                <input id="temp_mail_api_base" class="geist-input" placeholder="留空时自动跟随注册机默认值" data-default-placeholder="留空时自动跟随注册机默认值">
+              </label>
+              <label class="space-y-2 md:col-span-2">
+                <span class="text-sm font-medium">临时邮箱管理员密码</span>
+                <input id="temp_mail_admin_password" class="geist-input" placeholder="留空时自动跟随注册机默认值" data-default-placeholder="留空时自动跟随注册机默认值">
+              </label>
+              <label class="space-y-2">
+                <span class="text-sm font-medium">临时邮箱域名</span>
+                <input id="temp_mail_domain" class="geist-input" placeholder="留空时自动跟随注册机默认值" data-default-placeholder="留空时自动跟随注册机默认值">
+              </label>
+              <label class="space-y-2">
+                <span class="text-sm font-medium">站点密码</span>
+                <input id="temp_mail_site_password" class="geist-input" placeholder="留空时自动跟随注册机默认值" data-default-placeholder="留空时自动跟随注册机默认值">
+              </label>
+              <label class="space-y-2 md:col-span-2">
+                <span class="text-sm font-medium">回推 API Endpoint</span>
+                <input id="api_endpoint" class="geist-input" placeholder="留空时自动跟随注册机默认值" data-default-placeholder="留空时自动跟随注册机默认值">
+              </label>
+              <label class="space-y-2 md:col-span-2">
+                <span class="text-sm font-medium">回推 API Token</span>
+                <input id="api_token" class="geist-input" placeholder="留空时自动跟随注册机默认值" data-default-placeholder="留空时自动跟随注册机默认值">
+              </label>
+              <label class="space-y-2">
+                <span class="text-sm font-medium">回推时追加已有号池</span>
+                <input id="api_append" type="checkbox" class="h-4 w-4">
+              </label>
+              <label class="space-y-2">
+                <span class="text-sm font-medium">注册成功后自动开启 NSFW</span>
+                <input id="api_auto_enable_nsfw" type="checkbox" class="h-4 w-4">
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section class="space-y-6">
+          <div class="rounded-2xl border border-[var(--border)] bg-white p-6 space-y-4">
+            <div>
+              <h3 class="text-lg font-semibold">运行摘要</h3>
+              <p class="text-sm text-[var(--accents-4)] mt-1">展示调度器最近一次执行结果和当前受管号池概览。</p>
+            </div>
+            <pre id="last-result-box" class="rounded-xl bg-[var(--accents-1)] p-4 text-xs overflow-auto whitespace-pre-wrap min-h-[180px]">加载中...</pre>
+          </div>
+
+          <div class="rounded-2xl border border-[var(--border)] bg-white p-6 space-y-4">
+            <div>
+              <h3 class="text-lg font-semibold">注册机默认配置</h3>
+              <p class="text-sm text-[var(--accents-4)] mt-1">自动从 console 读取。注册任务覆盖项留空时，会继续跟随这里的值。</p>
+            </div>
+            <div id="console-defaults-meta" class="text-xs text-[var(--accents-4)]">加载中...</div>
+            <pre id="console-defaults-box" class="rounded-xl bg-[var(--accents-1)] p-4 text-xs overflow-auto whitespace-pre-wrap min-h-[180px]">加载中...</pre>
+          </div>
+
+          <div class="rounded-2xl border border-[var(--border)] bg-white p-6 space-y-4">
+            <div>
+              <h3 class="text-lg font-semibold">当前实际补号配置</h3>
+              <p class="text-sm text-[var(--accents-4)] mt-1">展示自动补号任务最终会使用的关键配置。</p>
+            </div>
+            <pre id="effective-config-box" class="rounded-xl bg-[var(--accents-1)] p-4 text-xs overflow-auto whitespace-pre-wrap min-h-[180px]">加载中...</pre>
+          </div>
+
+          <div class="rounded-2xl border border-[var(--border)] bg-white p-6 space-y-4">
+            <div>
+              <h3 class="text-lg font-semibold">最近自动任务</h3>
+              <p class="text-sm text-[var(--accents-4)] mt-1">只显示由该维护器自动创建的 register 任务。</p>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="geist-table min-w-full">
+                <thead>
+                  <tr>
+                    <th class="text-left">ID</th>
+                    <th class="text-left">名称</th>
+                    <th>状态</th>
+                    <th>进度</th>
+                    <th class="text-left">创建时间</th>
+                  </tr>
+                </thead>
+                <tbody id="task-table-body">
+                  <tr><td colspan="5" class="text-center text-[var(--accents-4)] py-8">加载中...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border border-[var(--border)] bg-white p-6 space-y-3">
+            <h3 class="text-lg font-semibold">删除规则</h3>
+            <ul class="text-sm text-[var(--accents-4)] space-y-2 list-disc pl-5">
+              <li>当前配置支持把 <code>cooling</code> 和 <code>expired</code> 号直接删除。</li>
+              <li>自动补号判断基于“受管号池中的活跃号数”。</li>
+              <li>补号任务通过 console API 创建，任务执行完成后再把新号回推到当前 Grok2API。</li>
+            </ul>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <div id="app-footer"></div>
+
+  <script src="/static/i18n/i18n.js"></script>
+  <script src="/static/common/js/admin-auth.js?v=1.6.3"></script>
+  <script src="/static/common/js/header.js?v=1.6.3"></script>
+  <script src="/static/common/js/footer.js?v=1.6.3"></script>
+  <script src="/static/common/js/toast.js"></script>
+  <script src="/static/admin/js/pool-maintenance.js?v=1.6.3"></script>
+</body>
+
+</html>

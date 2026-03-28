@@ -9,6 +9,7 @@ import time
 import os
 import secrets
 import sys
+from urllib.parse import urlsplit, urlunsplit
 
 from email_register import get_email_and_token, get_oai_code
 
@@ -1072,6 +1073,69 @@ def append_sso_to_txt(sso_value, output_path=DEFAULT_SSO_FILE):
     print(f"[*] 已追加写入 sso 到文件: {output_path}")
 
 
+def _dedupe_tokens(tokens):
+    seen = set()
+    deduped = []
+    for token in tokens or []:
+        normalized = str(token or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
+
+
+def _derive_nsfw_enable_async_endpoint(endpoint):
+    parsed = urlsplit(str(endpoint or "").strip())
+    path = parsed.path.rstrip("/")
+    if not parsed.scheme or not parsed.netloc or not path.endswith("/tokens"):
+        return ""
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc, f"{path}/nsfw/enable/async", parsed.query, parsed.fragment)
+    )
+
+
+def trigger_nsfw_enable_for_tokens(endpoint, api_token, tokens):
+    import requests
+    import urllib3
+
+    unique_tokens = _dedupe_tokens(tokens)
+    if not unique_tokens:
+        return
+
+    nsfw_endpoint = _derive_nsfw_enable_async_endpoint(endpoint)
+    if not nsfw_endpoint:
+        print(f"[Warn] 无法从 token 推送接口推导 NSFW 接口，已跳过自动开启 NSFW: {endpoint}")
+        return
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json",
+    }
+    try:
+        response = requests.post(
+            nsfw_endpoint,
+            json={"tokens": unique_tokens},
+            headers=headers,
+            timeout=30,
+            verify=False,
+        )
+        if response.status_code != 200:
+            print(f"[Warn] 自动开启 NSFW 失败: HTTP {response.status_code} {response.text[:200]}")
+            return
+
+        task_id = "-"
+        try:
+            payload = response.json()
+            task_id = payload.get("task_id", "-")
+        except Exception:
+            pass
+        print(f"[*] 已异步触发 NSFW 开启（本次 {len(unique_tokens)} 个）: task={task_id}")
+    except Exception as exc:
+        print(f"[Warn] 自动开启 NSFW 请求失败: {exc}")
+
+
 def push_sso_to_api(new_tokens: list):
     # 推送 SSO token 到 grok2api 管理接口。
     # append=false：直接将本次 token 列表全量推送（覆盖）。
@@ -1093,6 +1157,7 @@ def push_sso_to_api(new_tokens: list):
     endpoint = str(api_conf.get("endpoint", "")).strip()
     api_token = str(api_conf.get("token", "")).strip()
     append_mode = api_conf.get("append", True)
+    auto_enable_nsfw = bool(api_conf.get("auto_enable_nsfw", False))
 
     if not endpoint or not api_token:
         return
@@ -1102,7 +1167,8 @@ def push_sso_to_api(new_tokens: list):
         "Content-Type": "application/json",
     }
 
-    tokens_to_push = [t for t in new_tokens if t]
+    unique_new_tokens = _dedupe_tokens(new_tokens)
+    tokens_to_push = list(unique_new_tokens)
 
     if append_mode:
         try:
@@ -1120,14 +1186,8 @@ def push_sso_to_api(new_tokens: list):
                     item["token"] if isinstance(item, dict) else str(item)
                     for item in existing if item
                 ]
-                seen = set()
-                deduped = []
-                for t in existing_tokens + tokens_to_push:
-                    if t not in seen:
-                        seen.add(t)
-                        deduped.append(t)
-                tokens_to_push = deduped
-                print(f"[*] 查询到线上 {len(existing_tokens)} 个 token，合并本次 {len(new_tokens)} 个，共 {len(deduped)} 个")
+                tokens_to_push = _dedupe_tokens(existing_tokens + tokens_to_push)
+                print(f"[*] 查询到线上 {len(existing_tokens)} 个 token，合并本次 {len(unique_new_tokens)} 个，共 {len(tokens_to_push)} 个")
             else:
                 print(f"[Error] 查询线上 token 失败: HTTP {get_resp.status_code}，放弃推送以保护存量数据")
                 return
@@ -1145,6 +1205,8 @@ def push_sso_to_api(new_tokens: list):
         )
         if resp.status_code == 200:
             print(f"[*] SSO token 已推送到 API（共 {len(tokens_to_push)} 个）: {endpoint}")
+            if auto_enable_nsfw:
+                trigger_nsfw_enable_for_tokens(endpoint, api_token, unique_new_tokens)
         else:
             print(f"[Warn] 推送 API 返回异常: HTTP {resp.status_code} {resp.text[:200]}")
     except Exception as e:

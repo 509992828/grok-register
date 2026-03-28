@@ -44,6 +44,7 @@ services:
     build:
       context: .
       dockerfile: apps/worker-runtime/Dockerfile
+    init: true
     working_dir: /workspace
     command: python /workspace/apps/console/app.py
     environment:

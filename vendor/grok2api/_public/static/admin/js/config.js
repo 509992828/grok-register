@@ -1,5 +1,7 @@
 let apiKey = '';
 let currentConfig = {};
+let poolMaintenanceStatus = null;
+let configDirty = false;
 const byId = (id) => document.getElementById(id);
 const NUMERIC_FIELDS = new Set([
   'timeout',
@@ -163,6 +165,11 @@ const LOCALE_MAP = {
     "consumed_mode_enabled": { title: "启用消耗模式", desc: "启用新额度管理逻辑：使用本地消耗记录而非 API 返回值，支持更均衡的负载分配。（试验性功能，默认关闭）" }
   },
 
+  "pool_maintenance": {
+    "label": "号池维护",
+    "api_auto_enable_nsfw": { title: "自动开启 NSFW", desc: "注册成功并回推 token 后，是否自动触发 NSFW 开启接口。Enable NSFW automatically after freshly registered tokens are pushed back." }
+  },
+
   "log": {
     "label": "日志配置",
     "max_file_size_mb": { title: "单文件上限", desc: "单个日志文件大小上限（MB），超过后自动轮转；设置为 0 或负数表示不按大小轮转。" },
@@ -206,6 +213,42 @@ const CF_MANAGED_PROXY_KEYS = ['cf_clearance', 'browser', 'user_agent'];
 const CF_REFRESH_SUB_KEYS = ['flaresolverr_url', 'refresh_interval', 'timeout'];
 
 const SECTION_ORDER = new Map(Object.keys(LOCALE_MAP).map((key, index) => [key, index]));
+const POOL_MAINTENANCE_FALLBACK_FIELDS = new Set([
+  'proxy',
+  'browser_proxy',
+  'temp_mail_api_base',
+  'temp_mail_admin_password',
+  'temp_mail_domain',
+  'temp_mail_site_password',
+  'api_endpoint',
+  'api_token'
+]);
+const POOL_MAINTENANCE_SECRET_FIELDS = new Set([
+  'temp_mail_admin_password',
+  'temp_mail_site_password',
+  'api_token'
+]);
+
+function markConfigDirty() {
+  configDirty = true;
+}
+
+function attachDirtyTracking(input) {
+  if (!input || input.dataset.configDirtyBound === '1') return;
+  const eventName = input.type === 'checkbox' || input.tagName === 'SELECT' ? 'change' : 'input';
+  input.addEventListener(eventName, markConfigDirty);
+  if (eventName !== 'change') {
+    input.addEventListener('change', markConfigDirty);
+  }
+  input.dataset.configDirtyBound = '1';
+}
+
+function maskPoolMaintenanceSecret(value) {
+  const text = value == null ? '' : String(value);
+  if (!text) return '';
+  if (text.length <= 8) return '*'.repeat(text.length);
+  return `${text.slice(0, 2)}***${text.slice(-2)}`;
+}
 
 function getText(section, key) {
   var tTitle = t('config.fields.' + section + '.' + key + '.title');
@@ -362,18 +405,24 @@ function randomKey(len) {
 async function init() {
   apiKey = await ensureAdminKey();
   if (apiKey === null) return;
-  loadData();
+  loadData({ force: true });
 }
 
-async function loadData() {
+async function loadData(options = {}) {
+  const { force = false } = options;
+  if (configDirty && !force) return;
   try {
-    const res = await fetch('/v1/admin/config', {
-      headers: buildAuthHeaders(apiKey)
-    });
-    if (res.ok) {
-      currentConfig = await res.json();
+    const headers = buildAuthHeaders(apiKey);
+    const [configRes, poolRes] = await Promise.all([
+      fetch('/v1/admin/config', { headers }),
+      fetch('/v1/admin/pool-maintenance', { headers }),
+    ]);
+    if (configRes.ok) {
+      currentConfig = await configRes.json();
+      poolMaintenanceStatus = poolRes.ok ? await poolRes.json() : null;
       renderConfig(currentConfig);
-    } else if (res.status === 401) {
+      configDirty = false;
+    } else if (configRes.status === 401) {
       logout();
     }
   } catch (e) {
@@ -541,7 +590,46 @@ function buildFieldCard(section, key, val) {
 
   if (built) {
     inputWrapper.appendChild(built.node);
+    attachDirtyTracking(built.input);
   }
+
+  if (section === 'pool_maintenance') {
+    const consoleDefaults = (poolMaintenanceStatus && poolMaintenanceStatus.console_defaults) || {};
+    const fallbackValue = consoleDefaults[key];
+
+    if (POOL_MAINTENANCE_FALLBACK_FIELDS.has(key) && fallbackValue) {
+      if (built && built.input && built.input.tagName !== 'TEXTAREA' && !String(val || '').trim()) {
+        if (POOL_MAINTENANCE_SECRET_FIELDS.has(key)) {
+          built.input.placeholder = '留空时自动跟随注册机默认值';
+        } else {
+          built.input.placeholder = String(fallbackValue);
+        }
+      }
+
+      const hint = document.createElement('p');
+      hint.className = 'config-field-desc mt-2';
+      const displayValue = POOL_MAINTENANCE_SECRET_FIELDS.has(key)
+        ? maskPoolMaintenanceSecret(fallbackValue)
+        : String(fallbackValue);
+      hint.textContent = `注册机默认值 / Console default: ${displayValue}`;
+      inputWrapper.appendChild(hint);
+    }
+
+    if (key === 'api_append' && Object.prototype.hasOwnProperty.call(consoleDefaults, 'api_append')) {
+      const hint = document.createElement('p');
+      hint.className = 'config-field-desc mt-2';
+      hint.textContent = `注册机默认值 / Console default: ${consoleDefaults.api_append ? 'true' : 'false'}`;
+      inputWrapper.appendChild(hint);
+    }
+
+    if (key === 'api_auto_enable_nsfw' && Object.prototype.hasOwnProperty.call(consoleDefaults, 'api_auto_enable_nsfw')) {
+      const hint = document.createElement('p');
+      hint.className = 'config-field-desc mt-2';
+      hint.textContent = `注册机默认值 / Console default: ${consoleDefaults.api_auto_enable_nsfw ? 'true' : 'false'}`;
+      inputWrapper.appendChild(hint);
+    }
+  }
+
   fieldCard.appendChild(inputWrapper);
 
   // proxy.enabled (CF 自动刷新) 联动（toggle 本身始终可交互）
@@ -626,8 +714,10 @@ async function saveConfig() {
     });
 
     if (res.ok) {
+      configDirty = false;
       btn.innerText = t('config.saved');
       showToast(t('config.configSaved'), 'success');
+      await loadData({ force: true });
       setTimeout(() => {
         btn.innerText = originalText;
         btn.style.backgroundColor = '';
@@ -675,4 +765,11 @@ async function copyToClipboard(text, btn) {
   }
 }
 
-window.onload = init;
+window.onload = () => {
+  init();
+  window.setInterval(() => {
+    if (!document.hidden) {
+      loadData();
+    }
+  }, 15000);
+};

@@ -71,6 +71,7 @@
   },
   "nav": {
     "tokenManage": "Token管理",
+    "poolMaintenance": "号池维护",
     "configManage": "配置管理",
     "cacheManage": "缓存管理",
     "chat": "Chat 聊天",
@@ -120,12 +121,14 @@
       "asset": "资产配置",
       "voice": "语音配置",
       "token": "Token 池管理",
+      "pool_maintenance": "号池维护",
       "cache": "缓存管理",
       "nsfw": "NSFW 配置",
       "usage": "Usage 配置"
     },
     "sectionDescs": {
-      "proxy": "配置不正确将导致 403 错误。服务首次请求 Grok 时的 IP 必须与获取 CF Clearance 时的 IP 一致，后续服务器请求 IP 变化不会导致 403。"
+      "proxy": "配置不正确将导致 403 错误。服务首次请求 Grok 时的 IP 必须与获取 CF Clearance 时的 IP 一致，后续服务器请求 IP 变化不会导致 403。",
+      "pool_maintenance": "该分组用于在 Grok2API 后台直接维护号池。注册任务覆盖项中的字符串字段留空时，会自动读取注册机 console 的当前默认配置。"
     },
     "fields": {
       "app": {
@@ -216,6 +219,28 @@
         "save_delay_ms": {"title": "保存延迟", "desc": "Token 变更合并写入的延迟（毫秒）。"},
         "usage_flush_interval_sec": {"title": "用量落库间隔", "desc": "用量类字段写入数据库的最小间隔（秒）。"},
         "reload_interval_sec": {"title": "同步间隔", "desc": "多 worker 场景下 Token 状态刷新间隔（秒）。"}
+      },
+      "pool_maintenance": {
+        "enabled": {"title": "启用自动维护", "desc": "是否启用后台定时号池维护。开启后会定期清理失效号，并在活跃号不足时自动创建注册任务。"},
+        "console_url": {"title": "Console 地址", "desc": "注册机 console 的 HTTP 地址。号池维护器会从这里读取注册机默认配置，并通过这里创建补号任务。"},
+        "interval_sec": {"title": "检查间隔（秒）", "desc": "后台调度器的轮询间隔。启用后每隔多少秒检查一次活跃号数量与待删号。"},
+        "managed_pools": {"title": "受管号池", "desc": "需要维护的 Token 池列表。活跃号统计、cooling/expired 清理和自动补号都只针对这些号池。"},
+        "min_active_tokens": {"title": "最低活跃号数", "desc": "当受管号池内 active Token 总数低于该阈值时，系统会尝试自动创建注册任务补号。"},
+        "register_count_per_task": {"title": "单任务注册数", "desc": "每个自动创建的注册任务目标注册数量。系统会按缺口大小和并发上限决定创建多少个任务。"},
+        "max_running_tasks": {"title": "最大自动任务数", "desc": "允许同时运行的自动补号任务上限。超过这个数量后，即使号池不足也会等待现有任务结束。"},
+        "task_name_prefix": {"title": "任务名前缀", "desc": "自动创建的注册任务名称前缀，也会作为识别该维护器所创建任务的标记。"},
+        "delete_cooling_tokens": {"title": "删除 cooling 号", "desc": "是否自动删除处于 cooling 状态的 Token。启用后，维护器会把这些 Token 视为可清理对象。"},
+        "delete_expired_tokens": {"title": "删除 expired 号", "desc": "是否自动删除处于 expired 状态的 Token。启用后，维护器会把这些 Token 视为可清理对象。"},
+        "proxy": {"title": "请求代理覆盖", "desc": "给自动创建的注册任务覆盖请求代理。留空时自动跟随注册机 console 当前默认配置。"},
+        "browser_proxy": {"title": "浏览器代理覆盖", "desc": "给自动创建的注册任务覆盖浏览器代理。留空时自动跟随注册机 console 当前默认配置。"},
+        "temp_mail_api_base": {"title": "临时邮箱 API 覆盖", "desc": "给自动创建的注册任务覆盖临时邮箱 API 地址。留空时自动跟随注册机 console 当前默认配置。"},
+        "temp_mail_admin_password": {"title": "临时邮箱管理员密码覆盖", "desc": "给自动创建的注册任务覆盖临时邮箱管理员密码。留空时自动跟随注册机 console 当前默认配置。"},
+        "temp_mail_domain": {"title": "临时邮箱域名覆盖", "desc": "给自动创建的注册任务覆盖临时邮箱域名。留空时自动跟随注册机 console 当前默认配置。"},
+        "temp_mail_site_password": {"title": "临时邮箱站点密码覆盖", "desc": "给自动创建的注册任务覆盖站点密码。留空时自动跟随注册机 console 当前默认配置。"},
+        "api_endpoint": {"title": "回推 API Endpoint 覆盖", "desc": "注册成功后回推 Token 的接口地址。留空时自动跟随注册机 console 当前默认配置。"},
+        "api_token": {"title": "回推 API Token 覆盖", "desc": "注册成功后回推 Token 使用的鉴权 Token。留空时自动跟随注册机 console 当前默认配置。"},
+        "api_append": {"title": "回推时追加号池", "desc": "自动创建的注册任务在回推 Token 时是否使用追加模式。当前字段作为 pool maintenance 的固定布尔配置保存。"},
+        "api_auto_enable_nsfw": {"title": "自动开启 NSFW", "desc": "注册成功并回推 token 后，是否自动触发 NSFW 开启接口。开启后只会对本次新注册成功的 token 发起异步 NSFW 开启。"}
       },
       "cache": {
         "enable_auto_clean": {"title": "自动清理", "desc": "是否启用缓存自动清理，开启后按上限自动回收。"},

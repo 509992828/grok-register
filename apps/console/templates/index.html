@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Grok Register Console</title>
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
 </head>
 <body>
   <div id="app" class="shell">
@@ -81,6 +81,10 @@
           <label class="checkbox-row">
             <input name="api_append" type="checkbox" checked>
             <span>追加写入 token</span>
+          </label>
+          <label class="checkbox-row">
+            <input name="api_auto_enable_nsfw" type="checkbox">
+            <span>注册成功后自动开启 NSFW</span>
           </label>
           <div class="form-actions full">
             <button class="button" type="submit">保存默认配置</button>
@@ -171,6 +175,10 @@
               <input name="api_append" type="checkbox">
               <span>勾选时覆盖为追加写入</span>
             </label>
+            <label class="checkbox-row">
+              <input name="api_auto_enable_nsfw" type="checkbox">
+              <span>勾选时覆盖为注册成功后自动开启 NSFW</span>
+            </label>
           </div>
           <div class="form-actions full">
             <button class="button" type="submit">创建任务</button>
@@ -225,6 +233,6 @@
   <script>
     window.__DEFAULTS__ = {{ defaults|safe }};
   </script>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>
 </html>
